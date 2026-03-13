@@ -1,0 +1,40 @@
+---
+- name: Generate kubeadm join command
+  hosts: control
+  become: true
+  gather_facts: false
+  run_once: true
+
+  tasks:
+    - name: Create join command
+      command: kubeadm token create --print-join-command
+      register: join_command_raw
+
+    - name: Store join command as delegated fact on localhost
+      set_fact:
+        kubeadm_join_cmd: "{{ join_command_raw.stdout }}"
+      delegate_to: localhost
+      delegate_facts: true
+
+    - name: Display join command
+      debug:
+        msg: "Join command is: {{ join_command_raw.stdout }}"
+
+- name: Join worker nodes to cluster
+  hosts: workers
+  become: true
+  gather_facts: false
+
+  vars:
+    join_cmd: "{{ hostvars['localhost'].kubeadm_join_cmd }}"
+
+  tasks:
+    - name: Check if node already joined
+      stat:
+        path: /etc/kubernetes/kubelet.conf
+      register: kubelet_conf
+
+    - name: Join the cluster
+      command: "{{ join_cmd }}"
+      when: not kubelet_conf.stat.exists
+

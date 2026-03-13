@@ -1,0 +1,4 @@
+- import_playbook: k8s-common.yaml
+- import_playbook: k8s-control.yaml
+- import_playbook: k8s-workers.yaml
+

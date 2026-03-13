@@ -1,0 +1,69 @@
+---
+- name: Initialize Kubernetes control plane
+  hosts: control
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Check if cluster is already initialized
+      stat:
+        path: /etc/kubernetes/admin.conf
+      register: k8s_admin_conf
+
+    - name: Initialize Kubernetes cluster (CLI arguments)
+      command: >
+        kubeadm init \
+        --control-plane-endpoint {{ control_public_dns }} \
+        --apiserver-cert-extra-sans {{ control_public_dns }} \
+        --pod-network-cidr={{ pod_cidr }}
+      args:
+        creates: /etc/kubernetes/admin.conf
+      register: kubeadm_init
+      when: not k8s_admin_conf.stat.exists
+
+    - name: Show kubeadm init output
+      debug:
+        var: kubeadm_init.stdout_lines
+      when: kubeadm_init is defined
+
+    - name: Show kubeadm init output
+      debug:
+        var: kubeadm_init.stdout_lines
+      when: kubeadm_init is defined
+
+    - name: Create .kube directory
+      file:
+        path: /home/ubuntu/.kube
+        state: directory
+        owner: ubuntu
+        group: ubuntu
+        mode: '0755'
+
+    - name: Copy admin.conf to user kube config
+      copy:
+        src: /etc/kubernetes/admin.conf
+        dest: /home/ubuntu/.kube/config
+        remote_src: yes
+        owner: ubuntu
+        group: ubuntu
+        mode: '0644'
+
+    - name: Install Calico CNI
+      become_user: ubuntu
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+      ansible.builtin.shell: |
+        kubectl create -f https://raw.githubusercontent.com/projectcalico/calico/v3.31.4/manifests/operator-crds.yaml
+        kubectl create -f https://raw.githubusercontent.com/projectcalico/calico/v3.31.4/manifests/tigera-operator.yaml
+      when: not k8s_admin_conf.stat.exists
+
+    - name: Upload the custom resources necessary to configure Calico v3.30.3
+      template:
+        src: ../templates/custom-resources.yaml.j2
+        dest: /tmp/custom-resources.yaml
+
+    - name: Install Custom Resource
+      become_user: ubuntu
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+      ansible.builtin.shell: |
+        kubectl create -f /tmp/custom-resources.yaml
